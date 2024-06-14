@@ -1,0 +1,4 @@
+aiohttp==3.9.5
+opencv-python-headless<4.3
+python-dotenv~=1.0.0
+requests==2.32.3

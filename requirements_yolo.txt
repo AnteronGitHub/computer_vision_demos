@@ -1,0 +1,5 @@
+psutil
+matplotlib
+pyyaml
+tqdm
+pandas

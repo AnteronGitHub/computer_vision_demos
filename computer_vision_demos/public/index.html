@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Ideamill Video</title>
+    <script>
+      function startStream() {
+        document.getElementById("video-viewer").src = "/stream"
+        document.getElementById("stream-control").onclick = function(e) { stopStream() }
+        document.getElementById("stream-control").innerText = "Stop Stream"
+      }
+
+      function stopStream() {
+        document.getElementById("video-viewer").src = ""
+        document.getElementById("stream-control").onclick = function(e) { startStream() }
+        document.getElementById("stream-control").innerText = "Start Stream"
+      }
+    </script>
+  </head>
+  <body style="text-align: center;">
+    <h1>Ideamill Video</h1>
+    <button id="stream-control" style="margin-bottom: 2em;">Start stream</button><br />
+    <img id="video-viewer">
+    <script>
+      function init() {
+        stopStream()
+      }
+      init()
+    </script>
+  </body>
+</html>
