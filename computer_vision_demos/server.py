@@ -1,26 +1,13 @@
-import cv2 as cv
-from ultralytics import YOLO
-from ultralytics.utils.plotting import Annotator
-
-def draw_detections(img, results, class_names):
-    for r in results:
-        annotator = Annotator(img)
-        for box in r.boxes:
-            b = box.xyxy[0]
-            c = box.cls
-            annotator.box_label(b, class_names[int(c)])
-
-    return annotator.result()
-
 from .esp32_camera import ESP32CameraClient
+from .image_pipeline import ImagePipeline
 from aiohttp import web, MultipartWriter
 
 import os
 
 class ComputerVisionVideoServer:
     def __init__(self, camera_host, detect_objects : bool = True):
-        self.model = YOLO() if detect_objects else None
         self.camera_client = ESP32CameraClient(camera_host)
+        self.image_pipeline = ImagePipeline(detect_objects)
         self.public_dir = os.path.join("computer_vision_demos", "public")
 
     def start(self):
@@ -43,17 +30,11 @@ class ComputerVisionVideoServer:
             await response.prepare(request)
             try:
                 while True:
-                    frame = self.camera_client.get_frame()
-                    # frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-    
-                    if self.model is not None:
-                        detected_objects = self.model(frame, verbose=False)
-                        frame = draw_detections(frame, detected_objects, self.model.names)
-    
-                    (flag, encodedImage) = cv.imencode(".jpg", frame)
-                    data = bytearray(encodedImage)
+                    input_frame = self.camera_client.get_frame()
+                    output_frame = self.image_pipeline.process(input_frame)
+
                     with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
-                        mpwriter.append(data, { 'Content-Type': 'image/jpeg' })
+                        mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
                         await mpwriter.write(response, close_boundary=False)
             except ConnectionResetError:
                 print("Connection closed by client.")
