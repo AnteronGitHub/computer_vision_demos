@@ -14,6 +14,18 @@ class ComputerVisionVideoServer:
         self.logger = logging.getLogger("computer_vision_demos.server")
         self.frame_size = frame_size
 
+    def warm_up(self):
+        self.logger.info("Warming up the server...")
+        warm_up_started = time.time()
+
+        self.camera_client.connect()
+        input_frame = self.camera_client.get_frame()
+        output_frame = self.image_pipeline.process(input_frame)
+        self.camera_client.disconnect()
+
+        warm_up_time = time.time() - warm_up_started
+        self.logger.info(f"Warmed up the server in {warm_up_time:.2f} seconds")
+
     def start(self):
         self.camera_client.set_framesize(self.frame_size)
 
@@ -64,6 +76,7 @@ class ComputerVisionVideoServer:
 
         app = web.Application()
         app.add_routes([web.get('/', get_index), web.get('/favicon.ico', get_favicon), web.get('/stream', handle)])
-        self.logger.info(f"Server starting on 'http://0.0.0.0:8080/'")
+        self.warm_up()
+        self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
         web.run_app(app, print=None)
 
