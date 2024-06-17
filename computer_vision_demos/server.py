@@ -1,6 +1,7 @@
 from aiohttp import web, MultipartWriter
 import logging
 import os
+import time
 
 from .esp32_camera import ESP32CameraClient
 from .image_pipeline import ImagePipeline
@@ -30,16 +31,32 @@ class ComputerVisionVideoServer:
                                           reason='OK',
                                           headers={'Content-Type': f'multipart/x-mixed-replace;boundary={my_boundary}'})
             await response.prepare(request)
+            sum_fps = 0
+            frames = 0
             try:
+                previous_output_sent = 0
                 while True:
                     input_frame = self.camera_client.get_frame()
                     output_frame = self.image_pipeline.process(input_frame)
+                    current_output_sent = time.time()
+                    if previous_output_sent > 0:
+                        latency = current_output_sent - previous_output_sent
+                        fps = int(1/latency)
+                        sum_fps += fps
+                        frames += 1
+                    previous_output_sent = current_output_sent
 
                     with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
                         mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
                         await mpwriter.write(response, close_boundary=False)
             except ConnectionResetError:
-                self.logger.info("Client disconnected from stream.")
+                pass
+
+            if frames > 0:
+                avg_fps = sum_fps/frames
+            else:
+                avg_fps = "NaN"
+            self.logger.info(f"Client disconnected from stream. Average frame rate: {avg_fps:.2f} FPS")
 
             self.camera_client.disconnect()
             return response
