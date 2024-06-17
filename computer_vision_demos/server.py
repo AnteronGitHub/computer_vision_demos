@@ -7,14 +7,15 @@ from .esp32_camera import ESP32CameraClient
 from .image_pipeline import ImagePipeline
 
 class ComputerVisionVideoServer:
-    def __init__(self, camera_host, detect_objects : bool = True):
+    def __init__(self, camera_host, detect_objects : bool = True, frame_size : int = 6):
         self.camera_client = ESP32CameraClient(camera_host)
         self.image_pipeline = ImagePipeline(detect_objects)
         self.public_dir = os.path.join("computer_vision_demos", "public")
         self.logger = logging.getLogger("computer_vision_demos.server")
+        self.frame_size = frame_size
 
     def start(self):
-        self.camera_client.set_framesize(8)
+        self.camera_client.set_framesize(self.frame_size)
 
         async def get_index(request):
             return web.Response(text=open(os.path.join(self.public_dir, "index.html"), 'r').read(), content_type='text/html')
