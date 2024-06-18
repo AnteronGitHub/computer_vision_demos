@@ -2,6 +2,9 @@ import cv2 as cv
 import logging
 import requests
 
+CONTROL_VARIABLE_FRAMESIZE = 'framesize'
+CONTROL_VARIABLE_QUALITY = 'quality'
+
 class ESP32CameraClient():
     def __init__(self, host : str):
         self.host = host
@@ -9,17 +12,13 @@ class ESP32CameraClient():
         self.logger = logging.getLogger("computer_vision_demos.esp32_camera")
 
     @property
-    def control_url(self):
-        return f"http://{self.host}/control"
-
-    @property
     def stream_url(self):
         return f"http://{self.host}:81/stream"
 
-    def set_framesize(self, framesize : int):
+    def set_control_variable(self, variable : str, value : int):
         try:
-            self.logger.info(f"Setting framesize to {framesize} on camera at '{self.host}'")
-            requests.get(f"{self.control_url}?var=framesize&val={framesize}")
+            self.logger.info(f"Setting {variable} to {value} on camera at '{self.host}'")
+            requests.get(f"http://{self.host}/control?var={variable}&val={value}")
         except requests.exceptions.ConnectionError as e:
             raise e
 
