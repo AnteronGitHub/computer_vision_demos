@@ -25,7 +25,7 @@ class ESP32CameraClient():
     def connect(self):
         self.cap = cv.VideoCapture(self.stream_url)
         if not self.cap.isOpened():
-            raise "Could not open the capture"
+            raise Exception(f"Could connect to camera at '{self.stream_url}'")
 
     def disconnect(self):
         self.cap.release()

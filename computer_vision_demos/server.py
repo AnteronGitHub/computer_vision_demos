@@ -39,7 +39,10 @@ class ComputerVisionVideoServer:
 
         async def handle(request):
             self.logger.info("Client connected to stream")
-            self.camera_client.connect()
+            try:
+                self.camera_client.connect()
+            except Exception:
+                return web.HTTPInternalServerError()
 
             my_boundary = '123456789000000000000987654321'
             response = web.StreamResponse(status=200,
@@ -64,7 +67,7 @@ class ComputerVisionVideoServer:
                     with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
                         mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
                         await mpwriter.write(response, close_boundary=False)
-            except ConnectionResetError:
+            except (ConnectionResetError, ConnectionError):
                 pass
 
             if frames > 0:
@@ -78,7 +81,11 @@ class ComputerVisionVideoServer:
 
         app = web.Application()
         app.add_routes([web.get('/', get_index), web.get('/favicon.ico', get_favicon), web.get('/stream', handle)])
-        self.warm_up()
+        try:
+            self.warm_up()
+        except Exception as e:
+            self.logger.error(e)
+            return
         self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
         web.run_app(app, print=None)
 
