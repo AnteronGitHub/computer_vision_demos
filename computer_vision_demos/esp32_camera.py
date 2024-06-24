@@ -33,7 +33,7 @@ class ESP32CameraClient():
     def get_frame(self):
         ret, frame = self.cap.read()
         if not ret:
-            raise "Could not read frame"
+            raise Exception("Could not read frame")
 
         return frame
 
