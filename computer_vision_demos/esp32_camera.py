@@ -5,7 +5,9 @@ import requests
 CONTROL_VARIABLE_FRAMESIZE = 'framesize'
 CONTROL_VARIABLE_QUALITY = 'quality'
 
-class ESP32CameraClient():
+class ESP32CameraHTTPClient():
+    """HTTP client for retrieving video frames from a ESP32 Camera HTTP Server.
+    """
     def __init__(self, host : str):
         self.host = host
         self.cap = None
