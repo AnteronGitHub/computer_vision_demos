@@ -1,4 +1,6 @@
+import asyncio
 from aiohttp import web, MultipartWriter
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 import time
@@ -17,6 +19,11 @@ class ComputerVisionVideoServer:
         self.logger = logging.getLogger("computer_vision_demos.server")
         self.frame_size = frame_size
         self.quality = quality
+
+        self.pipeline_executor = ThreadPoolExecutor()
+
+        self.output_frame = None
+        self.output_buffered = asyncio.Condition()
 
     def warm_up(self):
         self.logger.info("Warming up the server...")
@@ -38,10 +45,6 @@ class ComputerVisionVideoServer:
 
     async def get_stream(self, request):
         self.logger.info("Client connected to stream")
-        try:
-            self.camera_client.connect()
-        except Exception:
-            return web.HTTPInternalServerError()
 
         my_boundary = '123456789000000000000987654321'
         response = web.StreamResponse(status=200,
@@ -53,8 +56,10 @@ class ComputerVisionVideoServer:
         try:
             previous_output_sent = 0
             while True:
-                input_frame = self.camera_client.get_frame()
-                output_frame = self.image_pipeline.process(input_frame)
+                async with self.output_buffered:
+                    await self.output_buffered.wait()
+                    output_frame = self.output_frame.copy()
+
                 current_output_sent = time.time()
                 if previous_output_sent > 0:
                     latency = current_output_sent - previous_output_sent
@@ -75,13 +80,32 @@ class ComputerVisionVideoServer:
             avg_fps = "NaN"
         self.logger.info(f"Client disconnected from stream. Average frame rate: {avg_fps:.2f} FPS")
 
-        self.camera_client.disconnect()
         return response
 
-    def start(self):
+    def process_frame(self):
+        input_frame = self.camera_client.get_frame()
+        return self.image_pipeline.process(input_frame)
+
+    async def start_input_stream(self):
+        """Connects to a camera and starts pulling frames over HTTP.
+        """
+        self.logger.info(f"Starting camera input stream")
+
         self.camera_client.set_control_variable(CONTROL_VARIABLE_FRAMESIZE, self.frame_size)
         self.camera_client.set_control_variable(CONTROL_VARIABLE_QUALITY, self.quality)
 
+        self.camera_client.connect()
+
+        loop = asyncio.get_running_loop()
+        while True:
+            output_frame = await loop.run_in_executor(self.pipeline_executor, self.process_frame)
+            async with self.output_buffered:
+                self.output_frame = output_frame.copy()
+                self.output_buffered.notify_all()
+
+        self.camera_client.disconnect()
+
+    def start_http_server(self, loop):
         app = web.Application()
         app.add_routes([web.get('/', self.get_index), \
                         web.get('/favicon.ico', self.get_favicon), \
@@ -93,5 +117,16 @@ class ComputerVisionVideoServer:
             self.logger.error(e)
             return
         self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
-        web.run_app(app, print=None)
+        web.run_app(app, print=None, loop=loop)
 
+    def start(self):
+        loop = asyncio.get_event_loop()
+        try:
+            asyncio.ensure_future(self.start_input_stream())
+            self.start_http_server(loop)
+            loop.run_forever()
+        except Exception as e:
+            if repr(e) == "Event loop is closed":
+                pass
+        finally:
+            loop.close()
