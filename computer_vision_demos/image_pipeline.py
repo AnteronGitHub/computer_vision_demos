@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 
-from .esp32_camera import ESP32CameraHTTPClient, CONTROL_VARIABLE_FRAMESIZE, CONTROL_VARIABLE_QUALITY
+from .esp32_camera import ESP32CameraHTTPClient, ESP32CameraFrameSize, CONTROL_VARIABLE_FRAMESIZE, CONTROL_VARIABLE_QUALITY
 
 class Debugger:
     def add_overlay(self, frame, processing_latency):
@@ -16,8 +16,8 @@ class Debugger:
         cv2.putText(frame, f"{fps} FPS", (4, 32), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1, cv2.LINE_AA)
 
 class ImagePipelineConfiguration:
-    def __init__(self, frame_size : int = 13, quality : int = 10):
-        self.frame_size = frame_size
+    def __init__(self, frame_size : ESP32CameraFrameSize = ESP32CameraFrameSize.FRAMESIZE_HD, quality : int = 10):
+        self.frame_size = frame_size.value
         self.quality = quality
 
 class ImagePipeline:
