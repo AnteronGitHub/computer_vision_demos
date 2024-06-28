@@ -1,9 +1,10 @@
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+import cv2
 import logging
+import numpy as np
 import time
 
-import cv2
+from concurrent.futures import ThreadPoolExecutor
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 
@@ -29,6 +30,8 @@ class ImagePipeline:
             self.model = YOLO()
         else:
             self.model = None
+
+        self.stream_started = asyncio.Event()
 
         self.debugger = Debugger()
 
@@ -72,34 +75,32 @@ class ImagePipeline:
         return self.process(input_frame)
 
     def warm_up(self):
-        self.logger.info("Warming up the image pipeline...")
+        """Process a single frame to 'warm up' any JIT compiled kernels.
+        """
+        self.logger.debug("Warming up the image pipeline...")
         warm_up_started = time.time()
 
-        self.camera_client.connect()
-        input_frame = self.camera_client.get_frame()
+        input_frame = np.zeros(shape=(1200, 1600, 3), dtype=np.uint8) #.astype('uint8')
         output_frame = self.process(input_frame)
-        self.camera_client.disconnect()
 
         warm_up_time = time.time() - warm_up_started
-        self.logger.info(f"Warmed up the server in {warm_up_time:.2f} seconds")
+        self.logger.info(f"Warmed up the model in {warm_up_time:.2f} seconds")
 
     async def start(self):
         """Connects to a camera and starts pulling frames over HTTP.
         """
-        try:
-            self.warm_up()
-        except Exception as e:
-            self.logger.error(e)
-            return
+        loop = asyncio.get_running_loop()
 
-        self.logger.info(f"Starting camera input stream")
+        await loop.run_in_executor(self.pipeline_executor, self.warm_up)
+
+        self.logger.debug(f"Starting camera input stream")
 
         self.camera_client.set_control_variable(CONTROL_VARIABLE_FRAMESIZE, self.frame_size)
         self.camera_client.set_control_variable(CONTROL_VARIABLE_QUALITY, self.quality)
 
         self.camera_client.connect()
+        self.stream_started.set()
 
-        loop = asyncio.get_running_loop()
         while True:
             output_frame = await loop.run_in_executor(self.pipeline_executor, self.pull_and_process_frame)
             async with self.output_buffered:
@@ -109,6 +110,9 @@ class ImagePipeline:
         self.camera_client.disconnect()
 
     async def frame_updated(self):
+        """Returns an updated frame as soon as one is available. Can be awaited in e.g. loops in external async
+        functions.
+        """
         async with self.output_buffered:
             await self.output_buffered.wait()
             return self.output_frame.copy()

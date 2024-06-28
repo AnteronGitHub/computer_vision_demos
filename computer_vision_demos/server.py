@@ -73,20 +73,22 @@ class ComputerVisionVideoServer:
 
         return response
 
-    def start_http_server(self, loop):
+    async def start_http_server(self):
         app = web.Application()
         app.add_routes([web.get('/', self.get_index), \
                         web.get('/favicon.ico', self.get_favicon), \
                         web.get('/stream', self.get_stream)])
 
+        await self.image_pipeline.stream_started.wait()
+
         self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
-        web.run_app(app, print=None, loop=loop)
+        await web._run_app(app, print=None)
 
     def start(self):
         loop = asyncio.get_event_loop()
         try:
             asyncio.ensure_future(self.image_pipeline.start())
-            self.start_http_server(loop)
+            asyncio.ensure_future(self.start_http_server())
             loop.run_forever()
         except Exception as e:
             if repr(e) == "Event loop is closed":
