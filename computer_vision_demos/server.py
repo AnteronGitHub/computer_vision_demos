@@ -1,11 +1,10 @@
 import asyncio
-from aiohttp import web, MultipartWriter
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 import time
 
-from .esp32_camera import ESP32CameraHTTPClient, CONTROL_VARIABLE_FRAMESIZE, CONTROL_VARIABLE_QUALITY
+from aiohttp import web, MultipartWriter
+
 from .image_pipeline import ImagePipeline
 
 class ServerStatistics:
@@ -37,29 +36,10 @@ class ComputerVisionVideoServer:
     video to connected clients with HTTP.
     """
     def __init__(self, camera_host, detect_objects : bool = True, frame_size : int = 13, quality : int = 10):
-        self.camera_client = ESP32CameraHTTPClient(camera_host)
-        self.image_pipeline = ImagePipeline(detect_objects)
-        self.public_dir = os.path.join("computer_vision_demos", "public")
         self.logger = logging.getLogger("computer_vision_demos.server")
-        self.frame_size = frame_size
-        self.quality = quality
+        self.public_dir = os.path.join("computer_vision_demos", "public")
 
-        self.pipeline_executor = ThreadPoolExecutor()
-
-        self.output_frame = None
-        self.output_buffered = asyncio.Condition()
-
-    def warm_up(self):
-        self.logger.info("Warming up the server...")
-        warm_up_started = time.time()
-
-        self.camera_client.connect()
-        input_frame = self.camera_client.get_frame()
-        output_frame = self.image_pipeline.process(input_frame)
-        self.camera_client.disconnect()
-
-        warm_up_time = time.time() - warm_up_started
-        self.logger.info(f"Warmed up the server in {warm_up_time:.2f} seconds")
+        self.image_pipeline = ImagePipeline(camera_host, detect_objects, frame_size, quality)
 
     async def get_index(self, request):
         return web.Response(text=open(os.path.join(self.public_dir, "index.html"), 'r').read(), content_type='text/html')
@@ -78,9 +58,7 @@ class ComputerVisionVideoServer:
         statistics = ServerStatistics()
         try:
             while True:
-                async with self.output_buffered:
-                    await self.output_buffered.wait()
-                    output_frame = self.output_frame.copy()
+                output_frame = await self.image_pipeline.frame_updated()
 
                 statistics.frame_processed()
 
@@ -95,47 +73,19 @@ class ComputerVisionVideoServer:
 
         return response
 
-    def process_frame(self):
-        input_frame = self.camera_client.get_frame()
-        return self.image_pipeline.process(input_frame)
-
-    async def start_input_stream(self):
-        """Connects to a camera and starts pulling frames over HTTP.
-        """
-        self.logger.info(f"Starting camera input stream")
-
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_FRAMESIZE, self.frame_size)
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_QUALITY, self.quality)
-
-        self.camera_client.connect()
-
-        loop = asyncio.get_running_loop()
-        while True:
-            output_frame = await loop.run_in_executor(self.pipeline_executor, self.process_frame)
-            async with self.output_buffered:
-                self.output_frame = output_frame.copy()
-                self.output_buffered.notify_all()
-
-        self.camera_client.disconnect()
-
     def start_http_server(self, loop):
         app = web.Application()
         app.add_routes([web.get('/', self.get_index), \
                         web.get('/favicon.ico', self.get_favicon), \
                         web.get('/stream', self.get_stream)])
 
-        try:
-            self.warm_up()
-        except Exception as e:
-            self.logger.error(e)
-            return
         self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
         web.run_app(app, print=None, loop=loop)
 
     def start(self):
         loop = asyncio.get_event_loop()
         try:
-            asyncio.ensure_future(self.start_input_stream())
+            asyncio.ensure_future(self.image_pipeline.start())
             self.start_http_server(loop)
             loop.run_forever()
         except Exception as e:
