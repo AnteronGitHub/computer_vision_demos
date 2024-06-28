@@ -91,7 +91,8 @@ class ComputerVisionVideoServer:
         """
         loop = asyncio.get_event_loop()
         try:
-            asyncio.ensure_future(self.image_pipeline.start())
+            asyncio.ensure_future(self.image_pipeline.input_stream.start_input_stream())
+            asyncio.ensure_future(self.image_pipeline.start_processing_pipeline())
             asyncio.ensure_future(self.start_http_server())
             loop.run_forever()
         except Exception as e:
