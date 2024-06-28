@@ -35,11 +35,11 @@ class ComputerVisionVideoServer:
     """Server that pulls HTTP video frames from a ESP32 Camera HTTP Server, detects objects, and streams the output
     video to connected clients with HTTP.
     """
-    def __init__(self, camera_host, detect_objects : bool = True, frame_size : int = 13, quality : int = 10):
+    def __init__(self, camera_host, detect_objects : bool = True, image_pipeline_configuration = None):
         self.logger = logging.getLogger("computer_vision_demos.server")
         self.public_dir = os.path.join("computer_vision_demos", "public")
 
-        self.image_pipeline = ImagePipeline(camera_host, detect_objects, frame_size, quality)
+        self.image_pipeline = ImagePipeline(camera_host, detect_objects, image_pipeline_configuration)
 
     async def get_index(self, request):
         return web.Response(text=open(os.path.join(self.public_dir, "index.html"), 'r').read(), content_type='text/html')
@@ -48,7 +48,7 @@ class ComputerVisionVideoServer:
         return web.FileResponse(os.path.join(self.public_dir, "favicon.ico"))
 
     async def get_stream(self, request):
-        self.logger.info("Client connected to stream")
+        self.logger.debug("Client connected to stream")
 
         my_boundary = '123456789000000000000987654321'
         response = web.StreamResponse(status=200,
@@ -68,12 +68,14 @@ class ComputerVisionVideoServer:
         except (ConnectionResetError, ConnectionError):
             pass
 
-        self.logger.info("Client disconnected from stream.")
+        self.logger.debug("Client disconnected from stream.")
         statistics.print_average_frame_rate()
 
         return response
 
     async def start_http_server(self):
+        """Waits for the image pipeline to have started the stream and then starts the HTTP server.
+        """
         app = web.Application()
         app.add_routes([web.get('/', self.get_index), \
                         web.get('/favicon.ico', self.get_favicon), \
@@ -85,6 +87,8 @@ class ComputerVisionVideoServer:
         await web._run_app(app, print=None)
 
     def start(self):
+        """Starts the image pipeline and the http server instance.
+        """
         loop = asyncio.get_event_loop()
         try:
             asyncio.ensure_future(self.image_pipeline.start())

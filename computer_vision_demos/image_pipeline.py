@@ -15,15 +15,23 @@ class Debugger:
         fps = int(1/processing_latency)
         cv2.putText(frame, f"{fps} FPS", (4, 32), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1, cv2.LINE_AA)
 
+class ImagePipelineConfiguration:
+    def __init__(self, frame_size : int = 13, quality : int = 10):
+        self.frame_size = frame_size
+        self.quality = quality
+
 class ImagePipeline:
     """Pulls images from a source and processes them e.g. by detecting objects with a model.
     """
-    def __init__(self, camera_host : str, detect_objects : bool = True, frame_size : int = 13, quality : int = 10):
+    def __init__(self, camera_host : str, detect_objects : bool = True, image_pipeline_configuration = None):
         self.logger = logging.getLogger("computer_vision_demos.image_pipeline")
 
         self.camera_client = ESP32CameraHTTPClient(camera_host)
-        self.frame_size = frame_size
-        self.quality = quality
+
+        if image_pipeline_configuration is None:
+            self.configuration = ImagePipelineConfiguration()
+        else:
+            self.configuration = image_pipeline_configuration
 
         if detect_objects:
             self.logger.info(f"Preparing YOLOv8 model for object detection.")
@@ -95,8 +103,8 @@ class ImagePipeline:
 
         self.logger.debug(f"Starting camera input stream")
 
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_FRAMESIZE, self.frame_size)
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_QUALITY, self.quality)
+        self.camera_client.set_control_variable(CONTROL_VARIABLE_FRAMESIZE, self.configuration.frame_size)
+        self.camera_client.set_control_variable(CONTROL_VARIABLE_QUALITY, self.configuration.quality)
 
         self.camera_client.connect()
         self.stream_started.set()
