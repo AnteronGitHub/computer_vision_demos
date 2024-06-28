@@ -19,7 +19,7 @@ class ESP32CameraHTTPClient():
 
     def set_control_variable(self, variable : str, value : int):
         try:
-            self.logger.info(f"Setting {variable} to {value} on camera at '{self.host}'")
+            self.logger.debug(f"Setting {variable} to {value} on camera at '{self.host}'")
             requests.get(f"http://{self.host}/control?var={variable}&val={value}")
         except requests.exceptions.ConnectionError as e:
             raise e
