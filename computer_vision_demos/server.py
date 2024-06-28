@@ -16,7 +16,7 @@ class ServerStatistics:
         self.previous_output_sent = None
         self.logger = logging.getLogger("computer_vision_demos.server_statistics")
 
-    def frame_processed(self):
+    def frame_sent(self):
         current_output_sent = time.time()
         if self.previous_output_sent is not None:
             latency = current_output_sent - self.previous_output_sent
@@ -60,11 +60,11 @@ class ComputerVisionVideoServer:
             while True:
                 output_frame = await self.image_pipeline.frame_updated()
 
-                statistics.frame_processed()
-
                 with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
                     mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
                     await mpwriter.write(response, close_boundary=False)
+
+                statistics.frame_sent()
         except (ConnectionResetError, ConnectionError):
             pass
 
