@@ -8,6 +8,30 @@ import time
 from .esp32_camera import ESP32CameraHTTPClient, CONTROL_VARIABLE_FRAMESIZE, CONTROL_VARIABLE_QUALITY
 from .image_pipeline import ImagePipeline
 
+class ServerStatistics:
+    """Maintains counters for calculating server statistics such as average frame rate.
+    """
+    def __init__(self):
+        self.sum_fps = 0
+        self.no_frames = 0
+        self.previous_output_sent = None
+        self.logger = logging.getLogger("computer_vision_demos.server_statistics")
+
+    def frame_processed(self):
+        current_output_sent = time.time()
+        if self.previous_output_sent is not None:
+            latency = current_output_sent - self.previous_output_sent
+            self.sum_fps += int(1/latency)
+            self.no_frames += 1
+
+        self.previous_output_sent = current_output_sent
+
+    def print_average_frame_rate(self):
+        if self.no_frames > 0:
+            self.logger.info(f"Average frame rate: {self.sum_fps/self.no_frames:.2f} FPS")
+        else:
+            self.logger.info(f"No frames processed.")
+
 class ComputerVisionVideoServer:
     """Server that pulls HTTP video frames from a ESP32 Camera HTTP Server, detects objects, and streams the output
     video to connected clients with HTTP.
@@ -51,22 +75,14 @@ class ComputerVisionVideoServer:
                                       reason='OK',
                                       headers={'Content-Type': f'multipart/x-mixed-replace;boundary={my_boundary}'})
         await response.prepare(request)
-        sum_fps = 0
-        frames = 0
+        statistics = ServerStatistics()
         try:
-            previous_output_sent = 0
             while True:
                 async with self.output_buffered:
                     await self.output_buffered.wait()
                     output_frame = self.output_frame.copy()
 
-                current_output_sent = time.time()
-                if previous_output_sent > 0:
-                    latency = current_output_sent - previous_output_sent
-                    fps = int(1/latency)
-                    sum_fps += fps
-                    frames += 1
-                previous_output_sent = current_output_sent
+                statistics.frame_processed()
 
                 with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
                     mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
@@ -74,11 +90,8 @@ class ComputerVisionVideoServer:
         except (ConnectionResetError, ConnectionError):
             pass
 
-        if frames > 0:
-            avg_fps = sum_fps/frames
-        else:
-            avg_fps = "NaN"
-        self.logger.info(f"Client disconnected from stream. Average frame rate: {avg_fps:.2f} FPS")
+        self.logger.info("Client disconnected from stream.")
+        statistics.print_average_frame_rate()
 
         return response
 
