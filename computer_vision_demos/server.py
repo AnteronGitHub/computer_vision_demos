@@ -1,12 +1,14 @@
 import asyncio
+import cv2
 import logging
+import numpy as np
 import os
 import time
 
 from aiohttp import web, MultipartWriter
 
 from .esp32_cam import ESP32CameraHTTPStream
-from .image_pipeline import ImagePipeline
+from .video_analysis import ObjectDetectionStream
 
 class ServerStatistics:
     """Maintains counters for calculating server statistics such as average frame rate.
@@ -36,12 +38,16 @@ class ComputerVisionVideoServer:
     """Server that pulls HTTP video frames from a ESP32 Camera HTTP Server, detects objects, and streams the output
     video to connected clients with HTTP.
     """
-    def __init__(self, camera_host, detect_objects : bool = True, image_pipeline_configuration = None):
+    def __init__(self, camera_host):
         self.logger = logging.getLogger("computer_vision_demos.server")
         self.public_dir = os.path.join("computer_vision_demos", "public")
 
-        self.input_stream = ESP32CameraHTTPStream(camera_host, image_pipeline_configuration)
-        self.image_pipeline = ImagePipeline(self.input_stream, detect_objects)
+        self.input_stream = ESP32CameraHTTPStream(camera_host)
+        self.object_detection_stream = ObjectDetectionStream(self.input_stream)
+
+    def encode_frame(self, frame : np.ndarray) -> bytes:
+        (flag, encodedImage) = cv2.imencode(".jpg", frame)
+        return bytearray(encodedImage)
 
     async def get_index(self, request):
         return web.Response(text=open(os.path.join(self.public_dir, "index.html"), 'r').read(), content_type='text/html')
@@ -60,10 +66,11 @@ class ComputerVisionVideoServer:
         statistics = ServerStatistics()
         try:
             while True:
-                output_frame = await self.image_pipeline.frame_updated()
+                output_frame = await self.object_detection_stream.frame_updated()
+                encoded_frame = self.encode_frame(output_frame)
 
                 with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
-                    mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
+                    mpwriter.append(encoded_frame, { 'Content-Type': 'image/jpeg' })
                     await mpwriter.write(response, close_boundary=False)
 
                 statistics.frame_sent()
@@ -83,7 +90,7 @@ class ComputerVisionVideoServer:
                         web.get('/favicon.ico', self.get_favicon), \
                         web.get('/stream', self.get_stream)])
 
-        await self.image_pipeline.stream_started.wait()
+        await self.object_detection_stream.stream_started.wait()
 
         self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
         await web._run_app(app, print=None)
@@ -93,8 +100,8 @@ class ComputerVisionVideoServer:
         """
         loop = asyncio.get_event_loop()
         try:
-            asyncio.ensure_future(self.input_stream.start_input_stream())
-            asyncio.ensure_future(self.image_pipeline.start_processing_pipeline())
+            asyncio.ensure_future(self.input_stream.start())
+            asyncio.ensure_future(self.object_detection_stream.start())
             asyncio.ensure_future(self.start_http_server())
             loop.run_forever()
         except Exception as e:

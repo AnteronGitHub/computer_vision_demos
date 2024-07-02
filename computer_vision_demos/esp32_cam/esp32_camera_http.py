@@ -5,7 +5,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 
 from .esp32_camera import ESP32CameraConfiguration, ESP32CameraControlVariable
-from ..image_pipeline import FrameStream
+from ..stream import FrameStream
 
 class ESP32CameraHTTPClient():
     """HTTP client for retrieving video frames from a ESP32 Camera HTTP Server.
@@ -42,21 +42,18 @@ class ESP32CameraHTTPClient():
         return frame
 
 class ESP32CameraHTTPStream(FrameStream):
-    def __init__(self, camera_host : str, image_pipeline_configuration = None):
+    def __init__(self, camera_host : str):
         super().__init__()
         self.logger = logging.getLogger("computer_vision_demos.ESP32CameraHTTPStream")
 
         self.camera_client = ESP32CameraHTTPClient(camera_host)
 
-        if image_pipeline_configuration is None:
-            self.configuration = ESP32CameraConfiguration()
-        else:
-            self.configuration = image_pipeline_configuration
+        self.configuration = ESP32CameraConfiguration()
 
         self.executor = ThreadPoolExecutor()
 
-    async def start_input_stream(self):
-        self.logger.debug(f"Starting camera input stream")
+    async def start(self):
+        self.logger.info(f"Starting ESP32-Cam HTTP Stream.")
 
         self.camera_client.set_control_variable(ESP32CameraControlVariable.FRAME_SIZE, self.configuration.frame_size)
         self.camera_client.set_control_variable(ESP32CameraControlVariable.QUALITY, self.configuration.quality)
