@@ -9,57 +9,12 @@ from concurrent.futures import ThreadPoolExecutor
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 
-from .esp32_camera import ESP32CameraHTTPClient, ESP32CameraFrameSize, CONTROL_VARIABLE_FRAMESIZE, CONTROL_VARIABLE_QUALITY
+from .esp32_cam import ESP32CameraHTTPStream
 
 class Debugger:
     def add_overlay(self, frame, processing_latency):
         fps = int(1/processing_latency)
         cv2.putText(frame, f"{fps} FPS", (4, 32), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-class ImagePipelineConfiguration:
-    def __init__(self, frame_size : ESP32CameraFrameSize = ESP32CameraFrameSize.FRAMESIZE_HD, quality : int = 10):
-        self.frame_size = frame_size.value
-        self.quality = quality
-
-class ESP32CameraHTTPStream:
-    def __init__(self, camera_host : str, image_pipeline_configuration = None):
-        self.logger = logging.getLogger("computer_vision_demos.ESP32CameraHTTPStream")
-
-        self.camera_client = ESP32CameraHTTPClient(camera_host)
-
-        if image_pipeline_configuration is None:
-            self.configuration = ImagePipelineConfiguration()
-        else:
-            self.configuration = image_pipeline_configuration
-
-        self.executor = ThreadPoolExecutor()
-        self.frame = None
-        self.frame_buffered = asyncio.Condition()
-
-    async def start_input_stream(self):
-        self.logger.debug(f"Starting camera input stream")
-
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_FRAMESIZE, self.configuration.frame_size)
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_QUALITY, self.configuration.quality)
-
-        self.camera_client.connect()
-
-        loop = asyncio.get_running_loop()
-        while True:
-            input_frame = await loop.run_in_executor(self.executor, self.camera_client.get_frame)
-            async with self.frame_buffered:
-                self.frame = input_frame.copy()
-                self.frame_buffered.notify_all()
-
-        self.camera_client.disconnect()
-
-    async def frame_updated(self):
-        """Returns an updated frame as soon as one is available. Can be awaited in e.g. loops in external async
-        functions.
-        """
-        async with self.frame_buffered:
-            await self.frame_buffered.wait()
-            return self.frame.copy()
 
 class ImagePipeline:
     """Pulls images from a source and processes them e.g. by detecting objects with a model.
