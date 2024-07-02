@@ -5,6 +5,7 @@ import time
 
 from aiohttp import web, MultipartWriter
 
+from .esp32_cam import ESP32CameraHTTPStream
 from .image_pipeline import ImagePipeline
 
 class ServerStatistics:
@@ -39,7 +40,8 @@ class ComputerVisionVideoServer:
         self.logger = logging.getLogger("computer_vision_demos.server")
         self.public_dir = os.path.join("computer_vision_demos", "public")
 
-        self.image_pipeline = ImagePipeline(camera_host, detect_objects, image_pipeline_configuration)
+        self.input_stream = ESP32CameraHTTPStream(camera_host, image_pipeline_configuration)
+        self.image_pipeline = ImagePipeline(self.input_stream, detect_objects)
 
     async def get_index(self, request):
         return web.Response(text=open(os.path.join(self.public_dir, "index.html"), 'r').read(), content_type='text/html')
@@ -91,7 +93,7 @@ class ComputerVisionVideoServer:
         """
         loop = asyncio.get_event_loop()
         try:
-            asyncio.ensure_future(self.image_pipeline.input_stream.start_input_stream())
+            asyncio.ensure_future(self.input_stream.start_input_stream())
             asyncio.ensure_future(self.image_pipeline.start_processing_pipeline())
             asyncio.ensure_future(self.start_http_server())
             loop.run_forever()

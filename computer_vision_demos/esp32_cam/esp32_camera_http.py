@@ -5,6 +5,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 
 from .esp32_camera import ESP32CameraConfiguration, ESP32CameraControlVariable
+from ..image_pipeline import FrameStream
 
 class ESP32CameraHTTPClient():
     """HTTP client for retrieving video frames from a ESP32 Camera HTTP Server.
@@ -40,8 +41,9 @@ class ESP32CameraHTTPClient():
 
         return frame
 
-class ESP32CameraHTTPStream:
+class ESP32CameraHTTPStream(FrameStream):
     def __init__(self, camera_host : str, image_pipeline_configuration = None):
+        super().__init__()
         self.logger = logging.getLogger("computer_vision_demos.ESP32CameraHTTPStream")
 
         self.camera_client = ESP32CameraHTTPClient(camera_host)
@@ -52,8 +54,6 @@ class ESP32CameraHTTPStream:
             self.configuration = image_pipeline_configuration
 
         self.executor = ThreadPoolExecutor()
-        self.frame = None
-        self.frame_buffered = asyncio.Condition()
 
     async def start_input_stream(self):
         self.logger.debug(f"Starting camera input stream")
@@ -66,17 +66,7 @@ class ESP32CameraHTTPStream:
         loop = asyncio.get_running_loop()
         while True:
             input_frame = await loop.run_in_executor(self.executor, self.camera_client.get_frame)
-            async with self.frame_buffered:
-                self.frame = input_frame.copy()
-                self.frame_buffered.notify_all()
+            await self.publish_frame(input_frame)
 
         self.camera_client.disconnect()
-
-    async def frame_updated(self):
-        """Returns an updated frame as soon as one is available. Can be awaited in e.g. loops in external async
-        functions.
-        """
-        async with self.frame_buffered:
-            await self.frame_buffered.wait()
-            return self.frame.copy()
 

@@ -9,20 +9,40 @@ from concurrent.futures import ThreadPoolExecutor
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 
-from .esp32_cam import ESP32CameraHTTPStream
-
 class Debugger:
     def add_overlay(self, frame, processing_latency):
         fps = int(1/processing_latency)
         cv2.putText(frame, f"{fps} FPS", (4, 32), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1, cv2.LINE_AA)
 
-class ImagePipeline:
+class FrameStream:
+    """Implements a publish/subscribe stream for image frames.
+    """
+    def __init__(self):
+        self.current_frame : np.ndarray = None
+        self.frame_buffered = asyncio.Condition()
+
+    async def publish_frame(self, new_frame : np.ndarray):
+        """Returns a new tuple as soon as one is available. Can be awaited in e.g. loops in external async functions.
+        """
+        async with self.frame_buffered:
+            self.current_frame = new_frame.copy()
+            self.frame_buffered.notify_all()
+
+    async def frame_updated(self):
+        """Returns a new tuple as soon as one is available. Can be awaited in e.g. loops in external async functions.
+        """
+        async with self.frame_buffered:
+            await self.frame_buffered.wait()
+            return self.current_frame.copy()
+
+class ImagePipeline(FrameStream):
     """Pulls images from a source and processes them e.g. by detecting objects with a model.
     """
-    def __init__(self, camera_host : str, detect_objects : bool = True, image_pipeline_configuration = None):
+    def __init__(self, input_stream : FrameStream, camera_host : str, detect_objects : bool = True, image_pipeline_configuration = None):
+        super().__init__()
         self.logger = logging.getLogger("computer_vision_demos.image_pipeline")
 
-        self.input_stream = ESP32CameraHTTPStream(camera_host, image_pipeline_configuration)
+        self.input_stream = input_stream
 
         if detect_objects:
             self.logger.info(f"Preparing YOLOv8 model for object detection.")
@@ -35,8 +55,6 @@ class ImagePipeline:
         self.debugger = Debugger()
 
         self.pipeline_executor = ThreadPoolExecutor()
-        self.output_frame = None
-        self.output_buffered = asyncio.Condition()
 
     def draw_detections(self, img, results):
         for r in results:
@@ -91,15 +109,5 @@ class ImagePipeline:
         while True:
             input_frame = await self.input_stream.frame_updated()
             output_frame = await loop.run_in_executor(self.pipeline_executor, functools.partial(self.process, input_frame))
-            async with self.output_buffered:
-                self.output_frame = output_frame.copy()
-                self.output_buffered.notify_all()
-
-    async def frame_updated(self):
-        """Returns an updated frame as soon as one is available. Can be awaited in e.g. loops in external async
-        functions.
-        """
-        async with self.output_buffered:
-            await self.output_buffered.wait()
-            return self.output_frame.copy()
+            await self.publish_frame(output_frame)
 
