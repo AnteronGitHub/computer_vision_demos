@@ -44,7 +44,7 @@ class ObjectDetectionStream(FrameStream):
 
         return annotator.result()
 
-    def process(self, frame) -> bytes:
+    def process(self, frame : np.ndarray) -> np.ndarray:
         processing_started = time.time()
         if self.model is not None:
             # Detect objects

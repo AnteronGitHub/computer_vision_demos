@@ -8,7 +8,7 @@ import time
 from aiohttp import web, MultipartWriter
 
 from .esp32_cam import ESP32CameraHTTPStream
-from .video_analysis import ObjectDetectionStream
+from .video_analysis import InstanceSegmentationStream, ObjectDetectionStream
 
 class ServerStatistics:
     """Maintains counters for calculating server statistics such as average frame rate.
@@ -43,7 +43,10 @@ class ComputerVisionVideoServer:
         self.public_dir = os.path.join("computer_vision_demos", "public")
 
         self.input_stream = ESP32CameraHTTPStream(camera_host)
-        self.object_detection_stream = ObjectDetectionStream(self.input_stream)
+
+        # Pick the demo application below
+        #self.video_analysis_stream = ObjectDetectionStream(self.input_stream)
+        self.video_analysis_stream = InstanceSegmentationStream(self.input_stream)
 
     def encode_frame(self, frame : np.ndarray) -> bytes:
         (flag, encodedImage) = cv2.imencode(".jpg", frame)
@@ -66,7 +69,7 @@ class ComputerVisionVideoServer:
         statistics = ServerStatistics()
         try:
             while True:
-                output_frame = await self.object_detection_stream.frame_updated()
+                output_frame = await self.video_analysis_stream.frame_updated()
                 encoded_frame = self.encode_frame(output_frame)
 
                 with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
@@ -90,7 +93,7 @@ class ComputerVisionVideoServer:
                         web.get('/favicon.ico', self.get_favicon), \
                         web.get('/stream', self.get_stream)])
 
-        await self.object_detection_stream.stream_started.wait()
+        await self.video_analysis_stream.stream_started.wait()
 
         self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
         await web._run_app(app, print=None)
@@ -101,7 +104,7 @@ class ComputerVisionVideoServer:
         loop = asyncio.get_event_loop()
         try:
             asyncio.ensure_future(self.input_stream.start())
-            asyncio.ensure_future(self.object_detection_stream.start())
+            asyncio.ensure_future(self.video_analysis_stream.start())
             asyncio.ensure_future(self.start_http_server())
             loop.run_forever()
         except Exception as e:
