@@ -1,91 +1,102 @@
-from aiohttp import web, MultipartWriter
+import asyncio
 import logging
 import os
 import time
 
-from .esp32_camera import ESP32CameraClient, CONTROL_VARIABLE_FRAMESIZE, CONTROL_VARIABLE_QUALITY
+from aiohttp import web, MultipartWriter
+
 from .image_pipeline import ImagePipeline
 
+class ServerStatistics:
+    """Maintains counters for calculating server statistics such as average frame rate.
+    """
+    def __init__(self):
+        self.sum_fps = 0
+        self.no_frames = 0
+        self.previous_output_sent = None
+        self.logger = logging.getLogger("computer_vision_demos.server_statistics")
+
+    def frame_sent(self):
+        current_output_sent = time.time()
+        if self.previous_output_sent is not None:
+            latency = current_output_sent - self.previous_output_sent
+            self.sum_fps += int(1/latency)
+            self.no_frames += 1
+
+        self.previous_output_sent = current_output_sent
+
+    def print_average_frame_rate(self):
+        if self.no_frames > 0:
+            self.logger.info(f"Average frame rate: {self.sum_fps/self.no_frames:.2f} FPS")
+        else:
+            self.logger.info(f"No frames processed.")
+
 class ComputerVisionVideoServer:
-    def __init__(self, camera_host, detect_objects : bool = True, frame_size : int = 13, quality : int = 10):
-        self.camera_client = ESP32CameraClient(camera_host)
-        self.image_pipeline = ImagePipeline(detect_objects)
-        self.public_dir = os.path.join("computer_vision_demos", "public")
+    """Server that pulls HTTP video frames from a ESP32 Camera HTTP Server, detects objects, and streams the output
+    video to connected clients with HTTP.
+    """
+    def __init__(self, camera_host, detect_objects : bool = True, image_pipeline_configuration = None):
         self.logger = logging.getLogger("computer_vision_demos.server")
-        self.frame_size = frame_size
-        self.quality = quality
+        self.public_dir = os.path.join("computer_vision_demos", "public")
 
-    def warm_up(self):
-        self.logger.info("Warming up the server...")
-        warm_up_started = time.time()
+        self.image_pipeline = ImagePipeline(camera_host, detect_objects, image_pipeline_configuration)
 
-        self.camera_client.connect()
-        input_frame = self.camera_client.get_frame()
-        output_frame = self.image_pipeline.process(input_frame)
-        self.camera_client.disconnect()
+    async def get_index(self, request):
+        return web.Response(text=open(os.path.join(self.public_dir, "index.html"), 'r').read(), content_type='text/html')
 
-        warm_up_time = time.time() - warm_up_started
-        self.logger.info(f"Warmed up the server in {warm_up_time:.2f} seconds")
+    async def get_favicon(self, request):
+        return web.FileResponse(os.path.join(self.public_dir, "favicon.ico"))
+
+    async def get_stream(self, request):
+        self.logger.debug("Client connected to stream")
+
+        my_boundary = '123456789000000000000987654321'
+        response = web.StreamResponse(status=200,
+                                      reason='OK',
+                                      headers={'Content-Type': f'multipart/x-mixed-replace;boundary={my_boundary}'})
+        await response.prepare(request)
+        statistics = ServerStatistics()
+        try:
+            while True:
+                output_frame = await self.image_pipeline.frame_updated()
+
+                with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
+                    mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
+                    await mpwriter.write(response, close_boundary=False)
+
+                statistics.frame_sent()
+        except (ConnectionResetError, ConnectionError):
+            pass
+
+        self.logger.debug("Client disconnected from stream.")
+        statistics.print_average_frame_rate()
+
+        return response
+
+    async def start_http_server(self):
+        """Waits for the image pipeline to have started the stream and then starts the HTTP server.
+        """
+        app = web.Application()
+        app.add_routes([web.get('/', self.get_index), \
+                        web.get('/favicon.ico', self.get_favicon), \
+                        web.get('/stream', self.get_stream)])
+
+        await self.image_pipeline.stream_started.wait()
+
+        self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
+        await web._run_app(app, print=None)
 
     def start(self):
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_FRAMESIZE, self.frame_size)
-        self.camera_client.set_control_variable(CONTROL_VARIABLE_QUALITY, self.quality)
-
-        async def get_index(request):
-            return web.Response(text=open(os.path.join(self.public_dir, "index.html"), 'r').read(), content_type='text/html')
-
-        async def get_favicon(request):
-            return web.FileResponse(os.path.join(self.public_dir, "favicon.ico"))
-
-        async def handle(request):
-            self.logger.info("Client connected to stream")
-            try:
-                self.camera_client.connect()
-            except Exception:
-                return web.HTTPInternalServerError()
-
-            my_boundary = '123456789000000000000987654321'
-            response = web.StreamResponse(status=200,
-                                          reason='OK',
-                                          headers={'Content-Type': f'multipart/x-mixed-replace;boundary={my_boundary}'})
-            await response.prepare(request)
-            sum_fps = 0
-            frames = 0
-            try:
-                previous_output_sent = 0
-                while True:
-                    input_frame = self.camera_client.get_frame()
-                    output_frame = self.image_pipeline.process(input_frame)
-                    current_output_sent = time.time()
-                    if previous_output_sent > 0:
-                        latency = current_output_sent - previous_output_sent
-                        fps = int(1/latency)
-                        sum_fps += fps
-                        frames += 1
-                    previous_output_sent = current_output_sent
-
-                    with MultipartWriter('image/jpeg', boundary=my_boundary) as mpwriter:
-                        mpwriter.append(output_frame, { 'Content-Type': 'image/jpeg' })
-                        await mpwriter.write(response, close_boundary=False)
-            except (ConnectionResetError, ConnectionError):
-                pass
-
-            if frames > 0:
-                avg_fps = sum_fps/frames
-            else:
-                avg_fps = "NaN"
-            self.logger.info(f"Client disconnected from stream. Average frame rate: {avg_fps:.2f} FPS")
-
-            self.camera_client.disconnect()
-            return response
-
-        app = web.Application()
-        app.add_routes([web.get('/', get_index), web.get('/favicon.ico', get_favicon), web.get('/stream', handle)])
+        """Starts the image pipeline and the http server instance.
+        """
+        loop = asyncio.get_event_loop()
         try:
-            self.warm_up()
+            asyncio.ensure_future(self.image_pipeline.input_stream.start_input_stream())
+            asyncio.ensure_future(self.image_pipeline.start_processing_pipeline())
+            asyncio.ensure_future(self.start_http_server())
+            loop.run_forever()
         except Exception as e:
-            self.logger.error(e)
-            return
-        self.logger.info(f"Serving on 'http://0.0.0.0:8080/'")
-        web.run_app(app, print=None)
-
+            if repr(e) == "Event loop is closed":
+                pass
+        finally:
+            loop.close()
