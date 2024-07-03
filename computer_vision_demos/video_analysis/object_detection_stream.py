@@ -19,19 +19,17 @@ class Debugger:
 class ObjectDetectionStream(FrameStream):
     """Detects objects from an input stream.
     """
-    def __init__(self, input_stream : FrameStream):
+    def __init__(self, input_stream : FrameStream, prediction_confidence : float = .25):
         super().__init__()
-        self.logger = logging.getLogger("computer_vision_demos.object_detection_stream")
 
         self.input_stream = input_stream
+        self.prediction_confidence = prediction_confidence
 
+        self.logger = logging.getLogger("computer_vision_demos.object_detection_stream")
         self.logger.debug(f"Preparing YOLOv8 model for object detection.")
         self.model = YOLO()
-
         self.stream_started = asyncio.Event()
-
         self.debugger = Debugger()
-
         self.pipeline_executor = ThreadPoolExecutor()
 
     def draw_detections(self, img, results):
@@ -48,7 +46,7 @@ class ObjectDetectionStream(FrameStream):
         processing_started = time.time()
         if self.model is not None:
             # Detect objects
-            detected_objects = self.model(frame, verbose=False)
+            detected_objects = self.model(frame, conf=self.prediction_confidence, verbose=False)
 
             # Draw objects
             frame = self.draw_detections(frame, detected_objects)

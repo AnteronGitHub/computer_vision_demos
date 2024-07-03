@@ -10,13 +10,16 @@ from ultralytics import YOLO
 from ..stream import FrameStream
 
 class InstanceSegmentationStream(FrameStream):
-    def __init__(self, input_stream : FrameStream):
+    def __init__(self, input_stream : FrameStream, prediction_confidence : float = .25):
         super().__init__()
         self.input_stream = input_stream
+        self.prediction_confidence = prediction_confidence
+
         self.logger = logging.getLogger("computer_vision_demos.instance_segmentation_stream")
         self.model = YOLO("yolov8n-seg.pt")
         self.executor = ThreadPoolExecutor()
         self.stream_started = asyncio.Event()
+
 
     def warm_up(self):
         """Process a single frame to 'warm up' any JIT compiled kernels.
@@ -31,7 +34,7 @@ class InstanceSegmentationStream(FrameStream):
         self.logger.info(f"Warmed up the model in {warm_up_time:.2f} seconds")
 
     def process(self, frame : np.ndarray) -> np.ndarray:
-        segments = self.model(frame, conf=.7, verbose=False)
+        segments = self.model(frame, conf=self.prediction_confidence, verbose=False)
         for r in segments:
             frame = r.plot()
 
