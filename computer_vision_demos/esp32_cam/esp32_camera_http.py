@@ -1,5 +1,5 @@
 import asyncio
-import cv2 as cv
+import cv2
 import logging
 import requests
 from concurrent.futures import ThreadPoolExecutor
@@ -27,7 +27,7 @@ class ESP32CameraHTTPClient():
             raise e
 
     def connect(self):
-        self.cap = cv.VideoCapture(self.stream_url)
+        self.cap = cv2.VideoCapture(self.stream_url)
         if not self.cap.isOpened():
             raise Exception(f"Could connect to camera at '{self.stream_url}'")
 
