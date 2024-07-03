@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ultralytics import YOLO
 
 from ..stream import FrameStream
+from . import Debugger
 
 class InstanceSegmentationStream(FrameStream):
     def __init__(self, input_stream : FrameStream, prediction_confidence : float = .25):
@@ -19,6 +20,7 @@ class InstanceSegmentationStream(FrameStream):
         self.model = YOLO("yolov8n-seg.pt")
         self.executor = ThreadPoolExecutor()
         self.stream_started = asyncio.Event()
+        self.debugger = Debugger()
 
 
     def warm_up(self):
@@ -34,9 +36,13 @@ class InstanceSegmentationStream(FrameStream):
         self.logger.info(f"Warmed up the model in {warm_up_time:.2f} seconds")
 
     def process(self, frame : np.ndarray) -> np.ndarray:
+        processing_started = time.time()
         segments = self.model(frame, conf=self.prediction_confidence, verbose=False)
         for r in segments:
             frame = r.plot()
+        e2e_latency = time.time() - processing_started
+
+        self.debugger.add_overlay(frame, e2e_latency)
 
         return frame
 

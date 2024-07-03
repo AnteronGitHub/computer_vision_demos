@@ -10,11 +10,7 @@ from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 
 from ..stream import FrameStream
-
-class Debugger:
-    def add_overlay(self, frame, processing_latency):
-        fps = int(1/processing_latency)
-        cv2.putText(frame, f"{fps} FPS", (4, 32), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1, cv2.LINE_AA)
+from . import Debugger
 
 class ObjectDetectionStream(FrameStream):
     """Detects objects from an input stream.
