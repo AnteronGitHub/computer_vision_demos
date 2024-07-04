@@ -1,34 +1,27 @@
-import asyncio
-import functools
-import cv2
-import logging
-import numpy as np
+"""Module contains object detection stream operator implementation."""
 import time
 
-from concurrent.futures import ThreadPoolExecutor
+import numpy as np
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 
-from ..stream import FrameStream
-from . import Debugger
+from computer_vision_demos.stream import FrameStreamOperator
+from .debugger import add_fps_counter
 
-class ObjectDetectionStream(FrameStream):
+class ObjectDetectionOperator(FrameStreamOperator):
     """Detects objects from an input stream.
     """
-    def __init__(self, input_stream : FrameStream, prediction_confidence : float = .25):
-        super().__init__()
+    def __init__(self, *args, prediction_confidence : float = .25):
+        super().__init__(*args)
 
-        self.input_stream = input_stream
         self.prediction_confidence = prediction_confidence
 
-        self.logger = logging.getLogger("computer_vision_demos.object_detection_stream")
-        self.logger.debug(f"Preparing YOLOv8 model for object detection.")
+        self.logger.debug("Preparing YOLOv8 model for object detection.")
         self.model = YOLO()
-        self.stream_started = asyncio.Event()
-        self.debugger = Debugger()
-        self.pipeline_executor = ThreadPoolExecutor()
 
     def draw_detections(self, img, results):
+        """Overlays the detected object boxes to the input image.
+        """
         for r in results:
             annotator = Annotator(img)
             for box in r.boxes:
@@ -48,33 +41,6 @@ class ObjectDetectionStream(FrameStream):
             frame = self.draw_detections(frame, detected_objects)
         e2e_latency = time.time() - processing_started
 
-        # Add debug overlay
-        self.debugger.add_overlay(frame, e2e_latency)
+        add_fps_counter(frame, e2e_latency)
 
         return frame
-
-    def warm_up(self):
-        """Process a single frame to 'warm up' any JIT compiled kernels.
-        """
-        self.logger.debug("Warming up the image pipeline...")
-        warm_up_started = time.time()
-
-        input_frame = np.zeros(shape=(1200, 1600, 3), dtype=np.uint8) #.astype('uint8')
-        output_frame = self.process(input_frame)
-
-        warm_up_time = time.time() - warm_up_started
-        self.logger.info(f"Warmed up the model in {warm_up_time:.2f} seconds")
-
-    async def start(self):
-        """Connects to a camera and starts pulling frames over HTTP.
-        """
-        self.logger.info("Starting object detection video stream.")
-        loop = asyncio.get_running_loop()
-
-        await loop.run_in_executor(self.pipeline_executor, self.warm_up)
-        self.stream_started.set()
-        while True:
-            input_frame = await self.input_stream.frame_updated()
-            output_frame = await loop.run_in_executor(self.pipeline_executor, functools.partial(self.process, input_frame))
-            await self.publish_frame(output_frame)
-

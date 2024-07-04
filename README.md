@@ -29,3 +29,8 @@ make run
 
 During the initial run, pretrained YOLOv8 model parameters will be downloaded, requiring Internet access; the parameters will be stored at the repo root, and no internet connection is needed in subsequent runs.
 
+## Run pylint
+Pylint can be run with make:
+```
+make run-pylint
+```

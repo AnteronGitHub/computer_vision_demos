@@ -1,10 +1,14 @@
+"""Module containing general abstractions related to the ESP32-Cam hardware."""
+import dataclasses
 from enum import Enum
 
 class ESP32CameraControlVariable(Enum):
+    """Configuration variables available for ESP32-Cam."""
     FRAME_SIZE = 'framesize'
     QUALITY = 'quality'
 
 class ESP32CameraFrameSize(Enum):
+    """Frame resolutions available for ESP32-Cam."""
     FRAMESIZE_96X96 = 0         # 96x96
     FRAMESIZE_QQVGA = 1         # 160x120
     FRAMESIZE_QCIF = 2          # 176x144
@@ -20,8 +24,9 @@ class ESP32CameraFrameSize(Enum):
     FRAMESIZE_SXGA = 12         # 1280x1024
     FRAMESIZE_UXGA = 13         # 1600x1200
 
+@dataclasses.dataclass
 class ESP32CameraConfiguration:
+    """Data class for ESP32-Cam configuration."""
     def __init__(self, frame_size : ESP32CameraFrameSize = ESP32CameraFrameSize.FRAMESIZE_HD, quality : int = 10):
         self.frame_size = frame_size.value
         self.quality = quality
-

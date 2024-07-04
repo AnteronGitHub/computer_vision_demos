@@ -1,11 +1,5 @@
-import cv2
+"""Module for various computer vision application implementations."""
+from .object_detection_stream import ObjectDetectionOperator
+from .instance_segmentation_stream import InstanceSegmentationOperator
 
-class Debugger:
-    def add_overlay(self, frame, processing_latency):
-        fps = int(1/processing_latency)
-        cv2.putText(frame, f"{fps} FPS", (4, 32), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1, cv2.LINE_AA)
-
-from .object_detection_stream import ObjectDetectionStream
-from .instance_segmentation_stream import InstanceSegmentationStream
-
-__all__ = ["InstanceSegmentationStream", "ObjectDetectionStream"]
+__all__ = ["InstanceSegmentationOperator", "ObjectDetectionOperator"]
