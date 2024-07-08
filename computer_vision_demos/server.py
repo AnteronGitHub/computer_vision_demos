@@ -8,7 +8,8 @@ import cv2
 import numpy as np
 from aiohttp import web, MultipartWriter
 
-from .esp32_cam import ESP32CameraHTTPStream
+#from .esp32_cam import ESP32CameraHTTPStream
+from .esp32_cam import ESP32CameraFrameFlowStream
 from .video_analysis import InstanceSegmentationOperator
 #from .video_analysis import ObjectDetectionOperator
 
@@ -44,11 +45,12 @@ class ComputerVisionVideoServer:
     """Server that pulls HTTP video frames from a ESP32 Camera HTTP Server, detects objects, and streams the output
     video to connected clients with HTTP.
     """
-    def __init__(self, camera_host):
+    def __init__(self, camera_host : str = None):
         self.logger = logging.getLogger("computer_vision_demos.server")
         self.public_dir = os.path.join("computer_vision_demos", "public")
 
-        self.input_stream = ESP32CameraHTTPStream(camera_host)
+        #self.input_stream = ESP32CameraHTTPStream(camera_host)
+        self.input_stream = ESP32CameraFrameFlowStream()
 
         # Pick the demo application below
         #self.video_analysis_operator = ObjectDetectionOperator(self.input_stream)
