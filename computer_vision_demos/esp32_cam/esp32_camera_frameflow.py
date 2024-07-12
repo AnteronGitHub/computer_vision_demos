@@ -23,6 +23,7 @@ class FrameFlowReceiverProtocol(asyncio.Protocol):
     def __init__(self, frame_received_callback):
         self.logger = logging.getLogger("computer_vision_demos.FrameFlowProtocol")
 
+        self.transport = None
         self.receiving_data = False
         self.data_buffer = io.BytesIO()
         self.buffer_length = 0
@@ -35,6 +36,7 @@ class FrameFlowReceiverProtocol(asyncio.Protocol):
         self.buffer_length = 0
 
     def connection_made(self, transport):
+        self.transport = transport
         self.logger.info("Camera connected.")
 
     def data_received(self, data : bytes):
@@ -66,6 +68,10 @@ class FrameFlowReceiverProtocol(asyncio.Protocol):
                 self.data_buffer.write(payload)
 
             asyncio.create_task(self.frame_received_callback(frame))
+
+            # Send server feedback
+            feedback = 1024
+            self.transport.write(struct.pack("@I", feedback))
 
     def connection_lost(self, exc):
         self.logger.info("Camera disconnected.")
